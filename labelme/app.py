@@ -659,6 +659,7 @@ class MainWindow(QtWidgets.QMainWindow):
             open=open_,
             close=close,
             deleteFile=deleteFile,
+            deleteImageFile=deleteImageFile,
             toggleKeepPrevMode=toggle_keep_prev_mode,
             toggle_keep_prev_brightness_contrast=action(
                 text=self.tr("Keep Previous Brightness/Contrast"),
@@ -735,6 +736,7 @@ class MainWindow(QtWidgets.QMainWindow):
             createAiPolygonMode,
             createAiMaskMode,
             brightnessContrast,
+            deleteImageFile,
         )
         # menu shown at right click
         self.context_menu_actions = (
@@ -791,6 +793,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 saveWithImageData,
                 close,
                 deleteFile,
+                deleteImageFile,
                 None,
                 open_config,
                 None,
@@ -868,6 +871,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     openNextImg,
                     save,
                     deleteFile,
+                    deleteImageFile,
                     None,
                     editMode,
                     duplicate,
@@ -2140,6 +2144,44 @@ class MainWindow(QtWidgets.QMainWindow):
                 item.setCheckState(Qt.Unchecked)
 
             self.resetState()
+
+    def deleteImageFile(self):
+        if self.filename is None:
+            return
+        mb = QtWidgets.QMessageBox
+        msg = self.tr(
+            "You are about to permanently delete this image file, proceed anyway?"
+        )
+        answer = mb.warning(self, self.tr("Attention"), msg, mb.Yes | mb.No)
+        if answer != mb.Yes:
+            return
+
+        image_file = self.filename
+
+        # also remove the associated label file if it exists
+        label_file = self.getLabelFile()
+        if osp.exists(label_file):
+            os.remove(label_file)
+            logger.info(f"Label file is removed: {label_file}")
+
+        # determine which row to switch to after deletion
+        current_row = self.fileListWidget.currentRow()
+        self.fileListWidget.takeItem(current_row)
+
+        # delete the actual image file
+        if osp.exists(image_file):
+            os.remove(image_file)
+            logger.info(f"Image file is removed: {image_file}")
+
+        self.resetState()
+
+        # open the next image, or the previous one if we were at the end
+        total = self.fileListWidget.count()
+        if total == 0:
+            self.toggleActions(False)
+            return
+        next_row = min(current_row, total - 1)
+        self.fileListWidget.setCurrentRow(next_row)
 
     def _open_config_file(self) -> None:
         if self._config_file is None:
