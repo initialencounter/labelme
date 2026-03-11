@@ -550,7 +550,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         zoomIn = action(
             self.tr("Zoom &In"),
-            lambda _: self._add_zoom(increment=1.1),
+            lambda _: self._add_zoom(increment=1.2),
             shortcuts["zoom_in"],
             icon="magnifying-glass-minus.svg",
             tip=self.tr("Increase zoom level"),
@@ -558,7 +558,7 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         zoomOut = action(
             self.tr("&Zoom Out"),
-            lambda _: self._add_zoom(increment=0.9),
+            lambda _: self._add_zoom(increment=0.6),
             shortcuts["zoom_out"],
             icon="magnifying-glass-plus.svg",
             tip=self.tr("Decrease zoom level"),
@@ -1742,7 +1742,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._set_zoom(value=zoom_value, pos=pos)
 
     def _zoom_requested(self, delta: int, pos: QtCore.QPointF) -> None:
-        self._add_zoom(increment=1.1 if delta > 0 else 0.9, pos=pos)
+        self._add_zoom(increment=1.2 if delta > 0 else 0.6, pos=pos)
 
     def setFitWindow(self, value=True):
         if value:
