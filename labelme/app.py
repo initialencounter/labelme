@@ -205,12 +205,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.canvas.mouseMoved.connect(self._update_status_stats)
         self.canvas.statusUpdated.connect(lambda text: self.status_left.setText(text))
 
-        scrollArea = QtWidgets.QScrollArea()
-        scrollArea.setWidget(self.canvas)
-        scrollArea.setWidgetResizable(True)
+        self.scrollArea = QtWidgets.QScrollArea()
+        self.scrollArea.setWidget(self.canvas)
+        self.scrollArea.setWidgetResizable(True)
         self.scrollBars = {
-            Qt.Vertical: scrollArea.verticalScrollBar(),
-            Qt.Horizontal: scrollArea.horizontalScrollBar(),
+            Qt.Vertical: self.scrollArea.verticalScrollBar(),
+            Qt.Horizontal: self.scrollArea.horizontalScrollBar(),
         }
         self.canvas.scrollRequest.connect(self.scrollRequest)
 
@@ -219,7 +219,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.canvas.selectionChanged.connect(self.shapeSelectionChanged)
         self.canvas.drawingPolygon.connect(self.toggleDrawingSensitive)
 
-        self.setCentralWidget(scrollArea)
+        self.setCentralWidget(self.scrollArea)
 
         features = QtWidgets.QDockWidget.DockWidgetFeatures()
         for dock in ["flag_dock", "label_dock", "shape_dock", "file_dock"]:
@@ -987,6 +987,12 @@ class MainWindow(QtWidgets.QMainWindow):
         # Callbacks:
         self.zoomWidget.valueChanged.connect(self._paint_canvas)
 
+        # Edge scrolling timer (like League of Legends)
+        self._edge_scroll_timer = QtCore.QTimer(self)
+        self._edge_scroll_timer.setInterval(16)  # ~60fps
+        self._edge_scroll_timer.timeout.connect(self._edge_scroll)
+        self._edge_scroll_timer.start()
+
         self.populateModeActions()
 
     def _load_config(
@@ -1648,6 +1654,37 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.canvas.undoLastLine()
             self.canvas.shapesBackups.pop()
+
+    def _edge_scroll(self) -> None:
+        """边缘滚动：鼠标移动到画布边缘时自动平移图像（类似英雄联盟）。"""
+        if self.image.isNull():
+            return
+        pos = self.scrollArea.mapFromGlobal(QtGui.QCursor.pos())
+        w = self.scrollArea.width()
+        h = self.scrollArea.height()
+        x = pos.x()
+        y = pos.y()
+        # 仅在鼠标位于滚动区域内时触发
+        if not (0 <= x <= w and 0 <= y <= h):
+            return
+        EDGE_ZONE = 100   # 距边缘多少像素内开始滚动
+        MAX_SPEED = 20   # 每帧最大滚动像素数
+        dx = 0
+        dy = 0
+        if x < EDGE_ZONE:
+            dx = -int(MAX_SPEED * (1.0 - x / EDGE_ZONE))
+        elif x > w - EDGE_ZONE:
+            dx = int(MAX_SPEED * (1.0 - (w - x) / EDGE_ZONE))
+        if y < EDGE_ZONE:
+            dy = -int(MAX_SPEED * (1.0 - y / EDGE_ZONE))
+        elif y > h - EDGE_ZONE:
+            dy = int(MAX_SPEED * (1.0 - (h - y) / EDGE_ZONE))
+        if dx != 0:
+            bar = self.scrollBars[Qt.Horizontal]
+            bar.setValue(bar.value() + dx)
+        if dy != 0:
+            bar = self.scrollBars[Qt.Vertical]
+            bar.setValue(bar.value() + dy)
 
     def scrollRequest(self, delta, orientation):
         units = -delta * 0.1  # natural scroll
