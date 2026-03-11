@@ -19,6 +19,20 @@ class LabelQLineEdit(QtWidgets.QLineEdit):
     def keyPressEvent(self, a0: QtGui.QKeyEvent) -> None:
         if a0.key() in [QtCore.Qt.Key_Up, QtCore.Qt.Key_Down]:
             self.list_widget.keyPressEvent(a0)
+        elif a0.key() == QtCore.Qt.Key_Space:
+            # 当输入框已有内容时，空格键直接确认对话框
+            text = self.text()
+            stripped = text.strip() if hasattr(text, "strip") else str(text).strip()
+            if stripped:
+                # 将空格键事件传递给父对话框处理
+                if self.parent() is not None:
+                    self.parent().keyPressEvent(a0)
+                return
+            super().keyPressEvent(a0)
+        elif QtCore.Qt.Key_1 <= a0.key() <= QtCore.Qt.Key_8:
+            # 数字键转发给父对话框，用于快速选择 label
+            if self.parent() is not None:
+                self.parent().keyPressEvent(a0)
         else:
             super().keyPressEvent(a0)
 
@@ -137,6 +151,21 @@ class LabelDialog(QtWidgets.QDialog):
         if hasattr(text, "trimmed"):
             return str(text.trimmed())
         return str(text)
+
+    def keyPressEvent(self, a0: QtGui.QKeyEvent) -> None:
+        if a0.key() == QtCore.Qt.Key_Space:
+            # 当已有选中的 label 时，按空格键直接确认
+            if self._get_stripped_text():
+                self.validate()
+                return
+        elif QtCore.Qt.Key_1 <= a0.key() <= QtCore.Qt.Key_8:
+            # 按数字键 1-8 快速选择并确认对应的 label
+            index = a0.key() - QtCore.Qt.Key_1  # Key_1 -> 0, Key_2 -> 1, ...
+            if index < self.labelList.count():
+                self.labelList.setCurrentRow(index)
+                self.validate()
+                return
+        super().keyPressEvent(a0)
 
     def labelDoubleClicked(self, item):
         self.validate()
