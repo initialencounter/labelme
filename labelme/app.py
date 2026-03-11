@@ -286,6 +286,14 @@ class MainWindow(QtWidgets.QMainWindow):
             tip=self.tr("Open prev (hold Ctl+Shift to copy labels)"),
             enabled=False,
         )
+        openNextUnannotatedImg = action(
+            self.tr("Next\nUnlabeled"),
+            self._open_next_unannotated_image,
+            None,
+            icon="frame-arrows-horizontal.svg",
+            tip=self.tr("Open next unannotated image"),
+            enabled=False,
+        )
         save = action(
             text=self.tr("&Save\n"),
             slot=self.saveFile,
@@ -308,6 +316,14 @@ class MainWindow(QtWidgets.QMainWindow):
             shortcut=shortcuts["delete_file"],
             icon="file-x.svg",
             tip=self.tr("Delete current label file"),
+            enabled=False,
+        )
+        deleteImageFile = action(
+            self.tr("&Delete Image File"),
+            self.deleteImageFile,
+            shortcuts["delete_image_file"],
+            icon="file-x.svg",
+            tip=self.tr("Delete current image file (and its label file)"),
             enabled=False,
         )
         changeOutputDir = action(
@@ -697,6 +713,7 @@ class MainWindow(QtWidgets.QMainWindow):
             brightnessContrast=brightnessContrast,
             openNextImg=openNextImg,
             openPrevImg=openPrevImg,
+            openNextUnannotatedImg=openNextUnannotatedImg,
             reset_layout=action(
                 text=self.tr("Reset Layout"),
                 slot=self._reset_layout,
@@ -784,6 +801,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 open_,
                 openNextImg,
                 openPrevImg,
+                openNextUnannotatedImg,
                 opendir,
                 self.menus.recentFiles,
                 save,
@@ -869,6 +887,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     opendir,
                     openPrevImg,
                     openNextImg,
+                    openNextUnannotatedImg,
                     save,
                     deleteFile,
                     deleteImageFile,
@@ -2312,6 +2331,42 @@ class MainWindow(QtWidgets.QMainWindow):
         self._import_images_from_dir(root_dir=targetDirPath)
         self._open_next_image()
 
+    def _open_first_unannotated_image(self) -> bool:
+        """跳转到文件列表中第一张未标注的图片。
+        如果找到未标注的图片则返回 True，否则返回 False。
+        """
+        for i in range(self.fileListWidget.count()):
+            item = self.fileListWidget.item(i)
+            if item is not None and item.checkState() == Qt.Unchecked:
+                self.fileListWidget.setCurrentRow(i)
+                self.fileListWidget.repaint()
+                return True
+        # 所有图片均已标注，给出提示
+        if self.fileListWidget.count() > 0:
+            self.show_status_message(
+                self.tr("All images in this folder have been annotated."), 3000
+            )
+        return False
+
+    def _open_next_unannotated_image(self, _value=False) -> None:
+        """从当前图片的下一张开始，跳转到第一张未标注的图片。"""
+        total = self.fileListWidget.count()
+        if total == 0:
+            return
+        current_row = self.fileListWidget.currentRow()
+        # 从当前行的下一行开始遍历，循环一整圈
+        for offset in range(1, total + 1):
+            i = (current_row + offset) % total
+            item = self.fileListWidget.item(i)
+            if item is not None and item.checkState() == Qt.Unchecked:
+                self.fileListWidget.setCurrentRow(i)
+                self.fileListWidget.repaint()
+                return
+        # 所有图片均已标注
+        self.show_status_message(
+            self.tr("All images in this folder have been annotated."), 3000
+        )
+
     @property
     def imageList(self) -> list[str]:
         lst = []
@@ -2354,6 +2409,7 @@ class MainWindow(QtWidgets.QMainWindow):
     ) -> None:
         self.actions.openNextImg.setEnabled(True)
         self.actions.openPrevImg.setEnabled(True)
+        self.actions.openNextUnannotatedImg.setEnabled(True)
 
         if not self._can_continue() or not root_dir:
             return
