@@ -975,11 +975,18 @@ class MainWindow(QtWidgets.QMainWindow):
                 self._import_images_from_dir(
                     root_dir=filename, pattern=self.fileSearch.text()
                 )
-                self._open_next_image()
+                self._open_last_annotated_or_next()
             else:
                 self._load_file(filename=filename)
         else:
             self.filename = None
+            last_dir = str(self.settings.value("workingDirectory", ""))
+            
+            if last_dir and osp.isdir(last_dir):
+                self._import_images_from_dir(
+                    root_dir=last_dir, pattern=self.fileSearch.text()
+                )
+                self._open_last_annotated_or_next()
 
         # Populate the File menu dynamically.
         self.updateFileMenu()
@@ -1569,6 +1576,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 flags=flags,
             )
             self.labelFile = lf
+            self._save_progress()
             items = self.fileListWidget.findItems(self.imagePath, Qt.MatchExactly)
             if len(items) > 0:
                 if len(items) != 1:
@@ -2005,6 +2013,10 @@ class MainWindow(QtWidgets.QMainWindow):
     def closeEvent(self, a0: QtGui.QCloseEvent) -> None:
         if not self._can_continue():
             a0.ignore()
+        self.settings.setValue(
+            "workingDirectory",
+            self._prev_opened_dir if self._prev_opened_dir else "",
+        )
         self.settings.setValue("filename", self.filename if self.filename else "")
         self.settings.setValue("window/size", self.size())
         self.settings.setValue("window/position", self.pos())
@@ -2346,6 +2358,32 @@ class MainWindow(QtWidgets.QMainWindow):
         self.canvas.endMove(copy=False)
         self.setDirty()
 
+    def _save_progress(self):
+        if self._prev_opened_dir and self.filename:
+            try:
+                progress_file = osp.join(self._prev_opened_dir, ".labelme_progress.txt")
+                with open(progress_file, "w", encoding="utf-8") as f:
+                    f.write(self.filename)
+            except Exception as e:
+                logger.warning("Failed to save progress file: {}", e)
+
+    def _open_last_annotated_or_next(self, default_next=True):
+        if self._prev_opened_dir:
+            progress_file = osp.join(self._prev_opened_dir, ".labelme_progress.txt")
+            if osp.exists(progress_file):
+                try:
+                    with open(progress_file, "r", encoding="utf-8") as f:
+                        last_filename = f.read().strip()
+                    if last_filename and last_filename in self.imageList:
+                        currIndex = self.imageList.index(last_filename)
+                        self.fileListWidget.setCurrentRow(currIndex)
+                        self.fileListWidget.repaint()
+                        return
+                except Exception:
+                    pass
+        if default_next:
+            self._open_next_image()
+
     def _open_dir_with_dialog(self, _value: bool = False) -> None:
         if not self._can_continue():
             return
@@ -2366,7 +2404,7 @@ class MainWindow(QtWidgets.QMainWindow):
             )
         )
         self._import_images_from_dir(root_dir=targetDirPath)
-        self._open_next_image()
+        self._open_last_annotated_or_next()
 
     def _open_first_unannotated_image(self) -> bool:
         """跳转到文件列表中第一张未标注的图片。
