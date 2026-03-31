@@ -15,8 +15,6 @@ from PyQt5.QtCore import QPointF
 from PyQt5.QtCore import Qt
 
 import labelme.utils
-from labelme._automation import OsamSession
-from labelme._automation import polygon_from_mask
 from labelme.shape import Shape
 
 from .download import download_ai_model
@@ -76,9 +74,6 @@ class Canvas(QtWidgets.QWidget):
     _dragging_start_pos: QPointF
     _is_dragging: bool
     _is_dragging_enabled: bool
-
-    _osam_session_model_name: str = "sam2:latest"
-    _osam_session: OsamSession | None
 
     def __init__(self, *args, **kwargs):
         self.epsilon: float = kwargs.pop("epsilon", 10.0)
@@ -159,14 +154,6 @@ class Canvas(QtWidgets.QWidget):
 
     def set_ai_model_name(self, model_name: str) -> None:
         self._osam_session_model_name = model_name
-
-    def _get_osam_session(self) -> OsamSession:
-        if (
-            self._osam_session is None
-            or self._osam_session.model_name != self._osam_session_model_name
-        ):
-            self._osam_session = OsamSession(model_name=self._osam_session_model_name)
-        return self._osam_session
 
     def _update_shape_with_ai(
         self, points: list[QPointF], point_labels: list[int], shape: Shape
@@ -1189,17 +1176,6 @@ def _update_shape_with_ai_response(
             points=[QPointF(x1, y1), QPointF(x2, y2)],
             point_labels=[1, 1],
             mask=response.annotations[0].mask[y1 : y2 + 1, x1 : x2 + 1],
-        )
-    elif createMode == "ai_polygon":
-        points = polygon_from_mask.compute_polygon_from_mask(
-            mask=response.annotations[0].mask
-        )
-        if len(points) < 2:
-            return
-        shape.setShapeRefined(
-            shape_type="polygon",
-            points=[QPointF(point[0], point[1]) for point in points],
-            point_labels=[1] * len(points),
         )
 
 

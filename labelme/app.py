@@ -18,7 +18,7 @@ from typing import Literal
 import imgviz
 import natsort
 import numpy as np
-import osam
+ 
 from loguru import logger
 from numpy.typing import NDArray
 from PyQt5 import QtCore
@@ -29,15 +29,13 @@ from PyQt5.QtWidgets import QMessageBox
 
 from labelme import __appname__
 from labelme import __version__
-from labelme._automation import bbox_from_text
-from labelme._automation._osam_session import OsamSession
+ 
 from labelme._label_file import LabelFile
 from labelme._label_file import LabelFileError
 from labelme._label_file import ShapeDict
 from labelme.config import load_config
 from labelme.shape import Shape
-from labelme.widgets import AiAssistedAnnotationWidget
-from labelme.widgets import AiTextToAnnotationWidget
+ 
 from labelme.widgets import BrightnessContrastDialog
 from labelme.widgets import Canvas
 from labelme.widgets import FileDialogPreview
@@ -48,7 +46,7 @@ from labelme.widgets import StatusStats
 from labelme.widgets import ToolBar
 from labelme.widgets import UniqueLabelQListWidget
 from labelme.widgets import ZoomWidget
-from labelme.widgets import download_ai_model
+ 
 
 from . import utils
 
@@ -69,22 +67,12 @@ class _ZoomMode(enum.Enum):
     MANUAL_ZOOM = enum.auto()
 
 
-_AI_TEXT_TO_ANNOTATION_CREATE_MODE_TO_SHAPE_TYPE: dict[
-    str, Literal["mask", "polygon", "rectangle"]
-] = {
-    "ai_mask": "mask",
-    "ai_polygon": "polygon",
-    "polygon": "polygon",
-    "rectangle": "rectangle",
-}
-
-
 class MainWindow(QtWidgets.QMainWindow):
     _config_file: Path | None
     _config: dict
 
     filename: str | None
-    _text_osam_session: OsamSession | None = None
+    # _text_osam_session: OsamSession | None = None  # 已移除AI相关
     _is_changed: bool = False
     _copied_shapes: list[Shape]
     _zoom_mode: _ZoomMode
@@ -412,22 +400,6 @@ class MainWindow(QtWidgets.QMainWindow):
             tip=self.tr("Start drawing linestrip. Ctrl+LeftClick ends creation."),
             enabled=False,
         )
-        createAiPolygonMode = action(
-            self.tr("Create AI-Polygon"),
-            lambda: self._switch_canvas_mode(edit=False, createMode="ai_polygon"),
-            None,
-            "ai-polygon.svg",
-            self.tr("Start drawing ai_polygon. Ctrl+LeftClick ends creation."),
-            enabled=False,
-        )
-        createAiMaskMode = action(
-            self.tr("Create AI-Mask"),
-            lambda: self._switch_canvas_mode(edit=False, createMode="ai_mask"),
-            None,
-            "ai-mask.svg",
-            self.tr("Start drawing ai_mask. Ctrl+LeftClick ends creation."),
-            enabled=False,
-        )
         editMode = action(
             self.tr("Edit Shapes"),
             lambda: self._switch_canvas_mode(edit=True),
@@ -701,8 +673,6 @@ class MainWindow(QtWidgets.QMainWindow):
             createLineMode=createLineMode,
             createPointMode=createPointMode,
             createLineStripMode=createLineStripMode,
-            createAiPolygonMode=createAiPolygonMode,
-            createAiMaskMode=createAiMaskMode,
             zoom=zoom,
             zoomIn=zoomIn,
             zoomOut=zoomOut,
@@ -729,8 +699,6 @@ class MainWindow(QtWidgets.QMainWindow):
             ("point", createPointMode),
             ("line", createLineMode),
             ("linestrip", createLineStripMode),
-            ("ai_polygon", createAiPolygonMode),
-            ("ai_mask", createAiMaskMode),
         ]
 
         # Group zoom controls into a list for easier toggling.
@@ -750,8 +718,6 @@ class MainWindow(QtWidgets.QMainWindow):
             createLineMode,
             createPointMode,
             createLineStripMode,
-            createAiPolygonMode,
-            createAiMaskMode,
             brightnessContrast,
             deleteImageFile,
         )
@@ -860,23 +826,8 @@ class MainWindow(QtWidgets.QMainWindow):
             ),
         )
 
-        self._ai_assisted_annotation_widget: AiAssistedAnnotationWidget = (
-            AiAssistedAnnotationWidget(
-                default_model=self._config["ai"]["default"],
-                on_model_changed=self.canvas.set_ai_model_name,
-                parent=self,
-            )
-        )
-        self._ai_assisted_annotation_widget.setEnabled(False)
         selectAiModel = QtWidgets.QWidgetAction(self)
-        selectAiModel.setDefaultWidget(self._ai_assisted_annotation_widget)
 
-        self._ai_text_to_annotation_widget: AiTextToAnnotationWidget = (
-            AiTextToAnnotationWidget(on_submit=self._submit_ai_prompt, parent=self)
-        )
-        self._ai_text_to_annotation_widget.setEnabled(False)
-        ai_prompt_action = QtWidgets.QWidgetAction(self)
-        ai_prompt_action.setDefaultWidget(self._ai_text_to_annotation_widget)
 
         self.addToolBar(
             Qt.TopToolBarArea,
@@ -903,7 +854,6 @@ class MainWindow(QtWidgets.QMainWindow):
                     None,
                     selectAiModel,
                     None,
-                    ai_prompt_action,
                 ],
                 font_base=self.font(),
             ),
@@ -1109,83 +1059,6 @@ class MainWindow(QtWidgets.QMainWindow):
     def show_status_message(self, message, delay=500):
         self.statusBar().showMessage(message, delay)
 
-    def _submit_ai_prompt(self, _) -> None:
-        if (
-            self.canvas.createMode
-            not in _AI_TEXT_TO_ANNOTATION_CREATE_MODE_TO_SHAPE_TYPE
-        ):
-            logger.warning("Unsupported createMode={!r}", self.canvas.createMode)
-            return
-        shape_type: Literal["rectangle", "polygon", "mask"] = (
-            _AI_TEXT_TO_ANNOTATION_CREATE_MODE_TO_SHAPE_TYPE[self.canvas.createMode]
-        )
-
-        texts = self._ai_text_to_annotation_widget.get_text_prompt().split(",")
-
-        model_name: str = self._ai_text_to_annotation_widget.get_model_name()
-        model_type = osam.apis.get_model_type_by_name(model_name)
-        if not (_is_already_downloaded := model_type.get_size() is not None):
-            if not download_ai_model(model_name=model_name, parent=self):
-                return
-        if (
-            self._text_osam_session is None
-            or self._text_osam_session.model_name != model_name
-        ):
-            self._text_osam_session = OsamSession(model_name=model_name)
-
-        boxes, scores, labels, masks = bbox_from_text.get_bboxes_from_texts(
-            session=self._text_osam_session,
-            image=utils.img_qt_to_arr(self.image)[:, :, :3],
-            image_id=str(hash(self.imagePath)),
-            texts=texts,
-        )
-
-        SCORE_FOR_EXISTING_SHAPE: float = 1.01
-        for shape in self.canvas.shapes:
-            if shape.shape_type != shape_type or shape.label not in texts:
-                continue
-            points: NDArray[np.float64] = np.array(
-                [[p.x(), p.y()] for p in shape.points]
-            )
-            xmin, ymin = points.min(axis=0)
-            xmax, ymax = points.max(axis=0)
-            box = np.array([xmin, ymin, xmax, ymax], dtype=np.float32)
-            boxes = np.r_[boxes, [box]]
-            scores = np.r_[scores, [SCORE_FOR_EXISTING_SHAPE]]
-            labels = np.r_[labels, [texts.index(shape.label)]]
-
-        boxes, scores, labels, indices = bbox_from_text.nms_bboxes(
-            boxes=boxes,
-            scores=scores,
-            labels=labels,
-            iou_threshold=self._ai_text_to_annotation_widget.get_iou_threshold(),
-            score_threshold=self._ai_text_to_annotation_widget.get_score_threshold(),
-            max_num_detections=100,
-        )
-
-        is_new = scores != SCORE_FOR_EXISTING_SHAPE
-        boxes = boxes[is_new]
-        scores = scores[is_new]
-        labels = labels[is_new]
-        indices = indices[is_new]
-
-        if masks is not None:
-            masks = masks[indices]
-        del indices
-
-        shapes: list[Shape] = bbox_from_text.get_shapes_from_bboxes(
-            boxes=boxes,
-            scores=scores,
-            labels=labels,
-            texts=texts,
-            masks=masks,
-            shape_type=shape_type,
-        )
-
-        self.canvas.storeShapes()
-        self._load_shapes(shapes, replace=False)
-        self.setDirty()
-
     def resetState(self):
         self.labelList.clear()
         self.filename = None
@@ -1243,12 +1116,6 @@ class MainWindow(QtWidgets.QMainWindow):
             for draw_mode, draw_action in self.draw_actions:
                 draw_action.setEnabled(createMode != draw_mode)
         self.actions.editMode.setEnabled(not edit)
-        self._ai_text_to_annotation_widget.setEnabled(
-            not edit and createMode in _AI_TEXT_TO_ANNOTATION_CREATE_MODE_TO_SHAPE_TYPE
-        )
-        self._ai_assisted_annotation_widget.setEnabled(
-            not edit and createMode in ("ai_polygon", "ai_mask")
-        )
 
     def updateFileMenu(self):
         current = self.filename
