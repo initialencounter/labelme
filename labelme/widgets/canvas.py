@@ -5,7 +5,6 @@ from typing import Literal
 
 import imgviz
 import numpy as np
-import osam
 from loguru import logger
 from PyQt5 import QtCore
 from PyQt5 import QtGui

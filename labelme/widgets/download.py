@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import types
 
-import osam
 from loguru import logger
 from PyQt5 import QtWidgets
 from PyQt5.QtCore import QObject
